@@ -94,7 +94,7 @@ year={2024}
 ```
 
 ## Contact
-If you have any inquiries regarding our paper or codes, feel free to reach out via email at yehjin.shin@yonsei.ac.kr.
+If you have any inquiries regarding our paper or codes, feel free to reach out via email at yehjin.shin@kaist.ac.kr.
 
 ## Acknowledgement
 This repository is based on [FMLP-Rec](https://github.com/Woeee/FMLP-Rec).
