@@ -99,7 +99,7 @@ class Trainer:
                 # 0. batch_data will be sent into the device(GPU or CPU)
                 batch = tuple(t.to(self.device) for t in batch)
 
-                user_ids, input_ids, answers, neg_answer, same_target = batch
+                user_ids, input_ids, time1_seq, time2_seq, answers, neg_answer, same_target = batch
                 loss = self.model.calculate_loss(input_ids, answers, neg_answer, same_target, user_ids)
                     
                 self.optim.zero_grad()
@@ -122,7 +122,7 @@ class Trainer:
 
             for i, batch in rec_data_iter:
                 batch = tuple(t.to(self.device) for t in batch)
-                user_ids, input_ids, answers, _, _ = batch
+                user_ids, input_ids, time1_seq, time2_seq, answers, _, _ = batch
                 recommend_output = self.model.predict(input_ids, user_ids)
                 recommend_output = recommend_output[:, -1, :]# 推荐的结果
                 
