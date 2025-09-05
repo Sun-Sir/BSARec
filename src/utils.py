@@ -78,6 +78,19 @@ def parse_args():
     parser.add_argument("--gpu_id", default="0", type=str, help="gpu_id")
     parser.add_argument("--variance", default=5, type=float)
 
+    # popularity encoding args
+    parser.add_argument("--popularity_dir", default="./data/", type=str)
+    parser.add_argument("--monthpop", default="wtembed", type=str)
+    parser.add_argument("--weekpop", default="week_embed2", type=str)
+    parser.add_argument("--week_eval_pop", default="week_wt_embed_adj", type=str)
+    parser.add_argument("--input_units1", default=132, type=int)
+    parser.add_argument("--input_units2", default=6, type=int)
+    parser.add_argument("--base_dim1", default=11, type=int)
+    parser.add_argument("--base_dim2", default=6, type=int)
+    parser.add_argument("--lag", default=1, type=int)
+    parser.add_argument("--use_week_eval", action="store_true")
+    parser.add_argument("--pause", default=0, type=int)
+
     # model args
     parser.add_argument("--model_type", default='BSARec', type=str)
     parser.add_argument("--max_seq_length", default=50, type=int)
