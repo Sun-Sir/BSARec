@@ -85,6 +85,11 @@ class Trainer:
     def iteration(self, epoch, dataloader, train=True):
 
         str_code = "train" if train else "test"
+
+        if (not train and getattr(self.args, "use_week_eval", False)
+                and hasattr(self.model, "eval_popularity_enc")):
+            self.model.popularity_enc = self.model.eval_popularity_enc
+
         # Setting the tqdm progress bar
         rec_data_iter = tqdm.tqdm(enumerate(dataloader),
                                   desc="Mode_%s:%d" % (str_code, epoch),
@@ -100,16 +105,10 @@ class Trainer:
                 batch = tuple(t.to(self.device) for t in batch)
 
 
-                user_ids, input_ids, answers, neg_answer, same_target = batch
-                if self.args.model_type.lower() == 'bsarec':
-                    time1_seq = torch.zeros_like(input_ids)
-                    time2_seq = torch.zeros_like(input_ids)
-                    loss = self.model.calculate_loss(input_ids, time1_seq, time2_seq, answers, neg_answer, same_target, user_ids)
-                else:
-                    loss = self.model.calculate_loss(input_ids, answers, neg_answer, same_target, user_ids)
-
                 user_ids, input_ids, time1_seq, time2_seq, answers, neg_answer, same_target = batch
-                loss = self.model.calculate_loss(input_ids, answers, neg_answer, same_target, user_ids)
+                loss = self.model.calculate_loss(
+                    input_ids, answers, neg_answer, same_target, user_ids, time1_seq, time2_seq
+                )
 
                     
                 self.optim.zero_grad()
@@ -133,16 +132,8 @@ class Trainer:
             for i, batch in rec_data_iter:
                 batch = tuple(t.to(self.device) for t in batch)
 
-                user_ids, input_ids, answers, _, _ = batch
-                if self.args.model_type.lower() == 'bsarec':
-                    time1_seq = torch.zeros_like(input_ids)
-                    time2_seq = torch.zeros_like(input_ids)
-                    recommend_output = self.model.predict(input_ids, time1_seq, time2_seq, user_ids)
-                else:
-                    recommend_output = self.model.predict(input_ids, user_ids)
-
                 user_ids, input_ids, time1_seq, time2_seq, answers, _, _ = batch
-                recommend_output = self.model.predict(input_ids, user_ids)
+                recommend_output = self.model.predict(input_ids, user_ids, time1_seq, time2_seq)
 
                 recommend_output = recommend_output[:, -1, :]# 推荐的结果
                 
