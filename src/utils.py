@@ -90,6 +90,7 @@ def parse_args():
     parser.add_argument("--lag", default=1, type=int)
     parser.add_argument("--use_week_eval", action="store_true")
     parser.add_argument("--pause", default=0, type=int)
+    parser.add_argument("--use_popularity", action="store_true", help="enable PopularityEncoding")
 
     # model args
     parser.add_argument("--model_type", default='BSARec', type=str)
