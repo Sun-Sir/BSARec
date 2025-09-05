@@ -94,6 +94,8 @@ def parse_args():
     if args.model_type.lower() == 'bsarec':
         parser.add_argument("--c", default=3, type=int)
         parser.add_argument("--alpha", default=0.9, type=float)
+        parser.add_argument("--input_units1", default=1, type=int)
+        parser.add_argument("--input_units2", default=1, type=int)
 
     elif args.model_type.lower() == 'bert4rec':
         parser.add_argument("--mask_ratio", default=0.2, type=float)

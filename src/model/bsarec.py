@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 from model._abstract_model import SequentialRecModel
 from model._modules import LayerNorm, FeedForward, MultiHeadAttention
+from model.popularity import PopularityEncoding
 
 class BSARecModel(SequentialRecModel):
     def __init__(self, args):
@@ -11,15 +12,28 @@ class BSARecModel(SequentialRecModel):
         self.LayerNorm = LayerNorm(args.hidden_size, eps=1e-12)
         self.dropout = nn.Dropout(args.hidden_dropout_prob)
         self.item_encoder = BSARecEncoder(args)
+        self.popularity_enc = PopularityEncoding(args)
+        self.pop_embed = nn.Linear(args.input_units1 + args.input_units2, args.hidden_size)
         self.apply(self.init_weights)
 
-    def forward(self, input_ids, user_ids=None, all_sequence_output=False):
+    def forward(self, input_ids, time1_seq, time2_seq, user_ids=None, all_sequence_output=False):
         extended_attention_mask = self.get_attention_mask(input_ids)
-        sequence_emb = self.add_position_embedding(input_ids)
+
+        seq_length = input_ids.size(1)
+        position_ids = torch.arange(seq_length, dtype=torch.long, device=input_ids.device)
+        position_ids = position_ids.unsqueeze(0).expand_as(input_ids)
+        item_emb = self.item_embeddings(input_ids)
+        pos_emb = self.position_embeddings(position_ids)
+        pop_feats = self.popularity_enc(input_ids, time1_seq, time2_seq)
+        pop_emb = self.pop_embed(pop_feats)
+
+        sequence_emb = item_emb + pos_emb + pop_emb
+        sequence_emb = self.LayerNorm(sequence_emb)
+        sequence_emb = self.dropout(sequence_emb)
         item_encoded_layers = self.item_encoder(sequence_emb,
                                                 extended_attention_mask,
                                                 output_all_encoded_layers=True,
-                                                )               
+                                                )
         if all_sequence_output:
             sequence_output = item_encoded_layers
         else:
@@ -27,14 +41,17 @@ class BSARecModel(SequentialRecModel):
 
         return sequence_output
 
-    def calculate_loss(self, input_ids, answers, neg_answers, same_target, user_ids):
-        seq_output = self.forward(input_ids)
+    def calculate_loss(self, input_ids, time1_seq, time2_seq, answers, neg_answers, same_target, user_ids):
+        seq_output = self.forward(input_ids, time1_seq, time2_seq)
         seq_output = seq_output[:, -1, :]
         item_emb = self.item_embeddings.weight
         logits = torch.matmul(seq_output, item_emb.transpose(0, 1))
         loss = nn.CrossEntropyLoss()(logits, answers)
 
         return loss
+
+    def predict(self, input_ids, time1_seq, time2_seq, user_ids=None, all_sequence_output=False):
+        return self.forward(input_ids, time1_seq, time2_seq, user_ids, all_sequence_output)
 
 class BSARecEncoder(nn.Module):
     def __init__(self, args):
