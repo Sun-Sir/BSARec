@@ -5,11 +5,13 @@ import os
 from scipy.sparse import csr_matrix
 from torch.utils.data import Dataset, DataLoader, RandomSampler, SequentialSampler
 import random
+import datetime
 
 class RecDataset(Dataset):
-    def __init__(self, args, user_seq, test_neg_items=None, data_type='train'):
+    def __init__(self, args, user_seq, time_seq, test_neg_items=None, data_type='train'):
         self.args = args
         self.user_seq = []
+        self.time_seq = []
         self.max_len = args.max_seq_length
         self.user_ids = []
         self.contrastive_learning = args.model_type.lower() in ['fearec', 'duorec']
@@ -18,14 +20,18 @@ class RecDataset(Dataset):
         if self.data_type=='train':
             for user, seq in enumerate(user_seq):
                 input_ids = seq[-(self.max_len + 2):-2]
+                input_times = time_seq[user][-(self.max_len + 2):-2]
                 for i in range(len(input_ids)):
                     self.user_seq.append(input_ids[:i + 1])
+                    self.time_seq.append(input_times[:i + 1])
                     self.user_ids.append(user)
         elif self.data_type=='valid':
-            for sequence in user_seq:
+            for sequence, t_seq in zip(user_seq, time_seq):
                 self.user_seq.append(sequence[:-1])
+                self.time_seq.append(t_seq[:-1])
         else:
             self.user_seq = user_seq
+            self.time_seq = time_seq
 
         self.test_neg_items = test_neg_items
 
@@ -58,26 +64,51 @@ class RecDataset(Dataset):
     def __len__(self):
         return len(self.user_seq)
 
+    def _convert_time(self, timestamps):
+        """Convert unix timestamps to month and week indices."""
+        time1_seq, time2_seq = [], []
+        for t in timestamps:
+            if t > 0:
+                dt = datetime.datetime.fromtimestamp(t)
+                time1_seq.append(dt.year * 12 + dt.month)
+                time2_seq.append(dt.isocalendar()[0] * 53 + dt.isocalendar()[1])
+            else:
+                time1_seq.append(0)
+                time2_seq.append(0)
+        return time1_seq, time2_seq
+
     def __getitem__(self, index):
         items = self.user_seq[index]
+        times = self.time_seq[index]
         input_ids = items[:-1]
+        input_times = times[:-1]
         answer = items[-1]
 
         seq_set = set(items)
         neg_answer = neg_sample(seq_set, self.args.item_size)
 
+        time1_seq, time2_seq = self._convert_time(input_times)
+
         pad_len = self.max_len - len(input_ids)
         input_ids = [0] * pad_len + input_ids
+        time1_seq = [0] * pad_len + time1_seq
+        time2_seq = [0] * pad_len + time2_seq
         input_ids = input_ids[-self.max_len:]
+        time1_seq = time1_seq[-self.max_len:]
+        time2_seq = time2_seq[-self.max_len:]
         assert len(input_ids) == self.max_len
+        assert len(time1_seq) == self.max_len
+        assert len(time2_seq) == self.max_len
 
         if self.data_type in ['valid', 'test']:
             cur_tensors = (
                 torch.tensor(index, dtype=torch.long),  # user_id for testing
                 torch.tensor(input_ids, dtype=torch.long),
+                torch.tensor(time1_seq, dtype=torch.long),
+                torch.tensor(time2_seq, dtype=torch.long),
                 torch.tensor(answer, dtype=torch.long),
-                torch.zeros(0, dtype=torch.long), # not used
-                torch.zeros(0, dtype=torch.long), # not used
+                torch.zeros(0, dtype=torch.long),  # not used
+                torch.zeros(0, dtype=torch.long),  # not used
             )
 
         elif self.contrastive_learning:
@@ -100,6 +131,8 @@ class RecDataset(Dataset):
             cur_tensors = (
                 torch.tensor(self.user_ids[index], dtype=torch.long),  # user_id for testing
                 torch.tensor(input_ids, dtype=torch.long),
+                torch.tensor(time1_seq, dtype=torch.long),
+                torch.tensor(time2_seq, dtype=torch.long),
                 torch.tensor(answer, dtype=torch.long),
                 torch.tensor(neg_answer, dtype=torch.long),
                 torch.tensor(sem_aug, dtype=torch.long)
@@ -109,9 +142,11 @@ class RecDataset(Dataset):
             cur_tensors = (
                 torch.tensor(self.user_ids[index], dtype=torch.long),  # user_id for testing
                 torch.tensor(input_ids, dtype=torch.long),
+                torch.tensor(time1_seq, dtype=torch.long),
+                torch.tensor(time2_seq, dtype=torch.long),
                 torch.tensor(answer, dtype=torch.long),
                 torch.tensor(neg_answer, dtype=torch.long),
-                torch.zeros(0, dtype=torch.long), # not used
+                torch.zeros(0, dtype=torch.long),  # not used
             )
 
         return cur_tensors
@@ -184,37 +219,49 @@ def get_user_seqs_and_max_item(data_file):
 def get_user_seqs(data_file):
     lines = open(data_file).readlines()
     user_seq = []
+    time_seq = []
     item_set = set()
     for line in lines:
         user, items = line.strip().split(' ', 1)
         items = items.split(' ')
-        items = [int(item) for item in items]
-        user_seq.append(items)
-        item_set = item_set | set(items)
+        item_list = []
+        time_list = []
+        for it in items:
+            if ':' in it:
+                i, t = it.split(':')
+            elif ',' in it:
+                i, t = it.split(',')
+            else:
+                i, t = it, 0
+            item_list.append(int(i))
+            time_list.append(int(t))
+            item_set.add(int(i))
+        user_seq.append(item_list)
+        time_seq.append(time_list)
     max_item = max(item_set)
     num_users = len(lines)
 
-    return user_seq, max_item, num_users
+    return user_seq, time_seq, max_item, num_users
 
 def get_seq_dic(args):
 
     args.data_file = args.data_dir + args.data_name + '.txt'
-    user_seq, max_item, num_users = get_user_seqs(args.data_file)
-    seq_dic = {'user_seq':user_seq, 'num_users':num_users }
+    user_seq, time_seq, max_item, num_users = get_user_seqs(args.data_file)
+    seq_dic = {'user_seq': user_seq, 'time_seq': time_seq, 'num_users': num_users}
 
     return seq_dic, max_item, num_users
 
-def get_dataloder(args,seq_dic):
+def get_dataloder(args, seq_dic):
 
-    train_dataset = RecDataset(args, seq_dic['user_seq'], data_type='train')
+    train_dataset = RecDataset(args, seq_dic['user_seq'], seq_dic['time_seq'], data_type='train')
     train_sampler = RandomSampler(train_dataset)
     train_dataloader = DataLoader(train_dataset, sampler=train_sampler, batch_size=args.batch_size, num_workers=args.num_workers)
 
-    eval_dataset = RecDataset(args, seq_dic['user_seq'], data_type='valid')
+    eval_dataset = RecDataset(args, seq_dic['user_seq'], seq_dic['time_seq'], data_type='valid')
     eval_sampler = SequentialSampler(eval_dataset)
     eval_dataloader = DataLoader(eval_dataset, sampler=eval_sampler, batch_size=args.batch_size, num_workers=args.num_workers)
 
-    test_dataset = RecDataset(args, seq_dic['user_seq'], data_type='test')
+    test_dataset = RecDataset(args, seq_dic['user_seq'], seq_dic['time_seq'], data_type='test')
     test_sampler = SequentialSampler(test_dataset)
     test_dataloader = DataLoader(test_dataset, sampler=test_sampler, batch_size=args.batch_size, num_workers=args.num_workers)
 
