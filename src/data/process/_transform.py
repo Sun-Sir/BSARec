@@ -110,12 +110,12 @@ def process(data_name='Beauty'):
     elif data_name == 'LastFM':
         datas = LastFM()
 
-    user_items, time_interval = dutils.get_interaction(datas, data_name)
+    user_items, user_times = dutils.get_interaction(datas, data_name)
     print(f'{data_name} Raw data has been processed!')
     # raw_id user: [item1, item2, item3...]
-    user_items, time_interval = dutils.filter_Kcore(user_items, time_interval, user_core=user_core, item_core=item_core)
+    user_items, user_times = dutils.filter_Kcore(user_items, user_times, user_core=user_core, item_core=item_core)
     print(f'User {user_core}-core complete! Item {item_core}-core complete!')
-    user_items, time_interval, user_num, item_num, data_maps = dutils.id_map(user_items, time_interval)  # new_num_id
+    user_items, user_times, user_num, item_num, data_maps = dutils.id_map(user_items, user_times)  # new_num_id # new_num_id
 
     avg_seqlen = np.mean([len(seq) for seq in user_items.values()])
     user_count, item_count, _ = dutils.check_Kcore(user_items, user_core=user_core, item_core=item_core)
@@ -132,10 +132,12 @@ def process(data_name='Beauty'):
                 f'Iteraction Num: {interact_num}, Avg Sequence Length: {avg_seqlen:.1f}, Sparsity: {sparsity:.2f}%'
     print(show_info)
 
-    item_file = '../'+ data_name + '.txt'
+    item_file = '../' + data_name + '.txt'
     with open(item_file, 'w') as out:
         for user, items in user_items.items():
-            out.write(user + ' ' + ' '.join(items) + '\n')
+            times = user_times[user]
+            pairs = [f"{i}:{t}" for i, t in zip(items, times)]
+            out.write(user + ' ' + ' '.join(pairs) + '\n')
 
 if __name__ == "__main__":
     dataname = sys.argv[1]

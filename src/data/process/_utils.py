@@ -18,6 +18,13 @@ def add_comma(num):
     return res_num[:-1]
 
 def get_interaction(datas, data_name):
+    """Group interactions by user and sort them by timestamp.
+
+    The original implementation stored only time *intervals* between
+    consecutive interactions.  For downstream processing we need the actual
+    unix timestamps, so this function now keeps the absolute times for each
+    interaction.
+    """
     if data_name == 'LastFM':
         # Repeated items
         user_seq = {}
@@ -45,25 +52,22 @@ def get_interaction(datas, data_name):
             else:
                 user_seq[user] = []
                 user_seq[user].append((item, time))
-                
-    time_interval = {}
+
+    user_times = {}
     for user, item_time in user_seq.items():
         item_time.sort(key=lambda x: x[1])  # Sort individual data sets separately
         items = []
         times = []
-        for i in range(len(item_time)):
-            item = item_time[i][0]
-            curr_time = item_time[i][1]
-            prev_time = item_time[i-1][1] if i > 0 else item_time[i][1]
+        for item, t in item_time:
             items.append(item)
-            times.append(curr_time-prev_time)
+            times.append(int(t))
 
         user_seq[user] = items
-        time_interval[user] = times
+        user_times[user] = times
 
-    return user_seq, time_interval
+    return user_seq, user_times
 
-def id_map(user_items, time_interval): # user_items dict
+def id_map(user_items, time_list):  # user_items dict
 
     user2id = {} # raw 2 uid
     item2id = {} # raw 2 iid
@@ -89,7 +93,7 @@ def id_map(user_items, time_interval): # user_items dict
 
     final_delta = {}
     for uid in id2user.keys():
-        final_delta[uid] = time_interval[id2user[uid]]
+        final_delta[uid] = time_list[id2user[uid]]
         
     data_maps = {
         'user2id': user2id,
@@ -100,24 +104,30 @@ def id_map(user_items, time_interval): # user_items dict
     return final_data, final_delta, user_id-1, item_id-1, data_maps
 
 # Circular filtration K-core
-def filter_Kcore(user_items, time_interval, user_core, item_core): # User to all items
+def filter_Kcore(user_items, time_list, user_core, item_core):  # User to all items
+    """Iteratively apply user/item k-core filtering.
+
+    When an interaction is removed the corresponding timestamp is removed as
+    well.  Since we keep absolute timestamps, no additional adjustment is
+    required for the remaining interactions.
+    """
+
     user_count, item_count, isKcore = check_Kcore(user_items, user_core, item_core)
     while not isKcore:
-        for user, num in user_count.items():
-            if user_count[user] < user_core: # Remove the user directly.
-                user_items.pop(user)
-                time_interval.pop(user)
+        for user in list(user_count.keys()):
+            if user_count[user] < user_core:  # Remove the user directly.
+                user_items.pop(user, None)
+                time_list.pop(user, None)
             else:
-                for item in user_items[user]:
+                remove_idx = []
+                for idx, item in enumerate(list(user_items[user])):
                     if item_count[item] < item_core:
-                        idx = user_items[user].index(item)
-                        user_items[user].remove(item)
-                        if idx != len(user_items[user]):        
-                            time_interval[user][idx+1] += time_interval[user][idx]
-                        time_interval[user].pop(idx)
-                time_interval[user][0] = 0
+                        remove_idx.append(idx)
+                for idx in reversed(remove_idx):
+                    user_items[user].pop(idx)
+                    time_list[user].pop(idx)
         user_count, item_count, isKcore = check_Kcore(user_items, user_core, item_core)
-    return user_items, time_interval
+    return user_items, time_list
 
 # K-core user_core item_core
 def check_Kcore(user_items, user_core, item_core):
@@ -134,4 +144,4 @@ def check_Kcore(user_items, user_core, item_core):
     for item, num in item_count.items():
         if num < item_core:
             return user_count, item_count, False
-    return user_count, item_count, True # Kcore is guaranteed.
+    return user_count, item_count, True  # Kcore is guaranteed.
