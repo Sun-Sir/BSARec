@@ -86,10 +86,6 @@ class Trainer:
 
         str_code = "train" if train else "test"
 
-        if (not train and getattr(self.args, "use_week_eval", False)
-                and hasattr(self.model, "eval_popularity_enc")):
-            self.model.popularity_enc = self.model.eval_popularity_enc
-
         # Setting the tqdm progress bar
         rec_data_iter = tqdm.tqdm(enumerate(dataloader),
                                   desc="Mode_%s:%d" % (str_code, epoch),
