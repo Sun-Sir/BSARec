@@ -16,6 +16,7 @@ class PopularityEncoding(torch.nn.Module):
         base_dim1: int,
         base_dim2: int,
         popularity_dir,
+        dataset: str,
     ):
         super().__init__()
         self.input1 = input_units1
@@ -24,8 +25,8 @@ class PopularityEncoding(torch.nn.Module):
         self.base_dim2 = base_dim2
 
         pop_dir = Path(popularity_dir)
-        month_pop = np.loadtxt(pop_dir / "month_pop.txt")
-        week_pop = np.loadtxt(pop_dir / "week_pop.txt")
+        month_pop = np.loadtxt(pop_dir / f"{dataset}_month_pop.txt")
+        week_pop = np.loadtxt(pop_dir / f"{dataset}_week_pop.txt")
 
         self.register_buffer(
             "month_pop_table",
@@ -109,6 +110,7 @@ class EvalPopularityEncoding(torch.nn.Module):
         base_dim1: int,
         base_dim2: int,
         popularity_dir,
+        dataset: str,
         pause: bool = False,
     ):
         super().__init__()
@@ -119,9 +121,9 @@ class EvalPopularityEncoding(torch.nn.Module):
         self.pause = pause
 
         pop_dir = Path(popularity_dir)
-        month_pop = np.loadtxt(pop_dir / "month_pop.txt")
-        week_pop = np.loadtxt(pop_dir / "week_pop.txt")
-        week_eval_pop = np.loadtxt(pop_dir / "week_eval_pop.txt")
+        month_pop = np.loadtxt(pop_dir / f"{dataset}_month_pop.txt")
+        week_pop = np.loadtxt(pop_dir / f"{dataset}_week_pop.txt")
+        week_eval_pop = np.loadtxt(pop_dir / f"{dataset}_week_eval_pop.txt")
 
         self.register_buffer("week_eval_pop", torch.FloatTensor(week_eval_pop))
         self.register_buffer(
@@ -218,6 +220,7 @@ def build_popularity_encoding(
     base_dim1: int,
     base_dim2: int,
     popularity_dir,
+    dataset: str,
     enable_eval: bool = False,
     pause: bool = False,
 ):
@@ -239,9 +242,10 @@ def build_popularity_encoding(
             base_dim1,
             base_dim2,
             popularity_dir,
+            dataset,
             pause=pause,
         )
     return PopularityEncoding(
-        input_units1, input_units2, base_dim1, base_dim2, popularity_dir
+        input_units1, input_units2, base_dim1, base_dim2, popularity_dir, dataset
     )
 

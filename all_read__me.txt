@@ -1,0 +1,24 @@
+# Beauty 数据集运行 BSARec 简要指南
+
+## 1. 数据处理
+```bash
+cd src/data/process
+bash process.sh    # 提示后输入 Beauty
+cd ../../..
+```
+
+## 2. 生成流行度文件
+```bash
+python src/data/popularity/generate_popularity.py src/data/Beauty.txt --dataset Beauty --out_dir src/data/popularity
+```
+
+## 3. 训练模型
+```bash
+cd src
+python main.py --data_name Beauty --lr 0.0005 --alpha 0.7 --c 5 --num_attention_heads 1 --train_name BSARec_Beauty
+```
+
+## 4. 验证模型
+```bash
+python main.py --data_name Beauty --alpha 0.7 --c 5 --num_attention_heads 1 --load_model BSARec_Beauty_best --do_eval
+```
