@@ -13,6 +13,9 @@ class BSARecModel(SequentialRecModel):
         self.dropout = nn.Dropout(args.hidden_dropout_prob)
         self.item_encoder = BSARecEncoder(args)
         self.use_popularity = getattr(args, "use_popularity", False)
+        self.popularity_enc = None
+        self.eval_popularity_enc = None
+        self.pop_embed = None
         if self.use_popularity:
             self.popularity_enc = build_popularity_encoding(
                 args.input_units1,
@@ -36,9 +39,6 @@ class BSARecModel(SequentialRecModel):
                     enable_eval=True,
                     pause=args.pause,
                 )
-        else:
-            self.popularity_enc = None
-            self.pop_embed = None
         self.apply(self.init_weights)
 
     def forward(self, input_ids, time1_seq, time2_seq, user_ids=None, all_sequence_output=False):
@@ -50,11 +50,16 @@ class BSARecModel(SequentialRecModel):
         item_emb = self.item_embeddings(input_ids)
         pos_emb = self.position_embeddings(position_ids)
         sequence_emb = item_emb + pos_emb
-        if self.use_popularity and self.popularity_enc is not None:
-            if isinstance(self.popularity_enc, EvalPopularityEncoding):
-                pop_feats = self.popularity_enc(input_ids, time1_seq, time2_seq, user_ids)
+        pop_module = (
+            self.eval_popularity_enc
+            if (not self.training and self.eval_popularity_enc is not None)
+            else self.popularity_enc
+        )
+        if self.use_popularity and pop_module is not None:
+            if isinstance(pop_module, EvalPopularityEncoding):
+                pop_feats = pop_module(input_ids, time1_seq, time2_seq, user_ids)
             else:
-                pop_feats = self.popularity_enc(input_ids, time1_seq, time2_seq)
+                pop_feats = pop_module(input_ids, time1_seq, time2_seq)
             pop_emb = self.pop_embed(pop_feats)
             sequence_emb = sequence_emb + pop_emb
 

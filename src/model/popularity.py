@@ -3,7 +3,6 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn as nn
-import pdb
 
 
 class PopularityEncoding(torch.nn.Module):
@@ -66,29 +65,28 @@ class PopularityEncoding(torch.nn.Module):
         )
 
     def forward(self, log_seqs, time1_seqs, time2_seqs):
+        device = self.month_pop_table.device
+        log_seqs = torch.as_tensor(log_seqs, dtype=torch.long, device=device)
+        time1_seqs = torch.as_tensor(time1_seqs, dtype=torch.long, device=device)
+        time2_seqs = torch.as_tensor(time2_seqs, dtype=torch.long, device=device)
+
         month_table_rows = torch.flatten(
-            torch.flatten(torch.LongTensor(time1_seqs)).reshape((-1, 1))
-            * self.base_dim1
-            + torch.arange(self.input1)
+            time1_seqs.flatten().reshape(-1, 1) * self.base_dim1
+            + torch.arange(self.input1, device=device)
         )
-        month_table_cols = torch.repeat_interleave(
-            torch.flatten(torch.LongTensor(log_seqs)), self.input1
-        )
+        month_table_cols = torch.repeat_interleave(log_seqs.flatten(), self.input1)
         week_table_rows = torch.flatten(
-            torch.flatten(torch.LongTensor(time2_seqs)).reshape((-1, 1))
-            * self.base_dim2
-            + torch.arange(self.input2)
+            time2_seqs.flatten().reshape(-1, 1) * self.base_dim2
+            + torch.arange(self.input2, device=device)
         )
-        week_table_cols = torch.repeat_interleave(
-            torch.flatten(torch.LongTensor(log_seqs)), self.input2
-        )
+        week_table_cols = torch.repeat_interleave(log_seqs.flatten(), self.input2)
         if (
-            (month_table_rows.numel() > 0 and torch.max(month_table_rows) >= self.month_pop_table.shape[0])
-            or (month_table_cols.numel() > 0 and torch.max(month_table_cols) >= self.month_pop_table.shape[1])
-            or (week_table_rows.numel() > 0 and torch.max(week_table_rows) >= self.week_pop_table.shape[0])
-            or (week_table_cols.numel() > 0 and torch.max(week_table_cols) >= self.week_pop_table.shape[1])
+            (month_table_rows.numel() > 0 and month_table_rows.max() >= self.month_pop_table.shape[0])
+            or (month_table_cols.numel() > 0 and month_table_cols.max() >= self.month_pop_table.shape[1])
+            or (week_table_rows.numel() > 0 and week_table_rows.max() >= self.week_pop_table.shape[0])
+            or (week_table_cols.numel() > 0 and week_table_cols.max() >= self.week_pop_table.shape[1])
         ):
-            pdb.set_trace()
+            raise IndexError("row or column accessed out-of-index in popularity table")
         month_pop = torch.reshape(
             self.month_pop_table[month_table_rows, month_table_cols],
             (log_seqs.shape[0], log_seqs.shape[1], self.input1),
@@ -164,32 +162,34 @@ class EvalPopularityEncoding(torch.nn.Module):
         )
 
     def forward(self, log_seqs, time1_seqs, time2_seqs, user):
+        device = self.month_pop_table.device
+        log_seqs = torch.as_tensor(log_seqs, dtype=torch.long, device=device)
+        time1_seqs = torch.as_tensor(time1_seqs, dtype=torch.long, device=device)
+        time2_seqs = torch.as_tensor(time2_seqs, dtype=torch.long, device=device)
+        user = torch.as_tensor(user, dtype=torch.long, device=device)
+
         month_table_rows = torch.flatten(
-            torch.flatten(torch.LongTensor(time1_seqs)).reshape((-1, 1))
-            * self.base_dim1
-            + torch.arange(self.input1)
+            time1_seqs.flatten().reshape(-1, 1) * self.base_dim1
+            + torch.arange(self.input1, device=device)
         )
-        month_table_cols = torch.repeat_interleave(
-            torch.flatten(torch.LongTensor(log_seqs)), self.input1
-        )
+        month_table_cols = torch.repeat_interleave(log_seqs.flatten(), self.input1)
         if self.input2 > self.base_dim2:
             week_table_rows = torch.flatten(
-                torch.flatten(torch.LongTensor(time2_seqs)).reshape((-1, 1))
-                * self.base_dim2
-                + torch.arange(self.input2 - self.base_dim2)
+                time2_seqs.flatten().reshape(-1, 1) * self.base_dim2
+                + torch.arange(self.input2 - self.base_dim2, device=device)
             )
             week_table_cols = torch.repeat_interleave(
-                torch.flatten(torch.LongTensor(log_seqs)), self.input2 - self.base_dim2
+                log_seqs.flatten(), self.input2 - self.base_dim2
             )
             if (
-                torch.max(week_table_rows) >= self.week_pop_table.shape[0]
-                or torch.max(week_table_cols) >= self.week_pop_table.shape[1]
+                (week_table_rows.numel() > 0 and week_table_rows.max() >= self.week_pop_table.shape[0])
+                or (week_table_cols.numel() > 0 and week_table_cols.max() >= self.week_pop_table.shape[1])
             ):
                 raise IndexError("row or column accessed out-of-index in popularity table")
 
         if (
-            torch.max(month_table_rows) >= self.month_pop_table.shape[0]
-            or torch.max(month_table_cols) >= self.month_pop_table.shape[1]
+            (month_table_rows.numel() > 0 and month_table_rows.max() >= self.month_pop_table.shape[0])
+            or (month_table_cols.numel() > 0 and month_table_cols.max() >= self.month_pop_table.shape[1])
         ):
             raise IndexError("row or column accessed out-of-index in popularity table")
         month_pop = torch.reshape(
@@ -198,8 +198,8 @@ class EvalPopularityEncoding(torch.nn.Module):
         )
 
         week_eval_rows = torch.flatten(
-            (torch.LongTensor(user - 1) * self.base_dim2).unsqueeze(1)
-            + torch.arange(self.base_dim2)
+            (user - 1).unsqueeze(1) * self.base_dim2
+            + torch.arange(self.base_dim2, device=device)
         )
         recent_pop = torch.swapaxes(
             self.week_eval_pop[week_eval_rows].reshape((len(user), 6, -1)), 1, 2
