@@ -72,6 +72,11 @@ def main():
     )
     parser.add_argument("input", type=Path, help="Path to txt file with user sequences")
     parser.add_argument(
+        "--dataset",
+        required=True,
+        help="Dataset name prefix for output files",
+    )
+    parser.add_argument(
         "--top_n", type=int, default=None, help="Keep only top N items by interaction count"
     )
     parser.add_argument(
@@ -92,9 +97,15 @@ def main():
     week_eval[1] = week_counts[latest_week]
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
-    np.savetxt(args.out_dir / "month_pop.txt", month_counts, fmt="%d")
-    np.savetxt(args.out_dir / "week_pop.txt", week_counts, fmt="%d")
-    np.savetxt(args.out_dir / "week_eval_pop.txt", week_eval, fmt="%d")
+    np.savetxt(
+        args.out_dir / f"{args.dataset}_month_pop.txt", month_counts, fmt="%d"
+    )
+    np.savetxt(
+        args.out_dir / f"{args.dataset}_week_pop.txt", week_counts, fmt="%d"
+    )
+    np.savetxt(
+        args.out_dir / f"{args.dataset}_week_eval_pop.txt", week_eval, fmt="%d"
+    )
 
 if __name__ == "__main__":
     main()

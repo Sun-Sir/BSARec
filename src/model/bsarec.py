@@ -20,6 +20,7 @@ class BSARecModel(SequentialRecModel):
                 args.base_dim1,
                 args.base_dim2,
                 args.popularity_dir,
+                args.data_name,
             )
             self.pop_embed = nn.Linear(
                 args.input_units1 + args.input_units2, args.hidden_size
@@ -31,6 +32,7 @@ class BSARecModel(SequentialRecModel):
                     args.base_dim1,
                     args.base_dim2,
                     args.popularity_dir,
+                    args.data_name,
                     enable_eval=True,
                     pause=args.pause,
                 )
