@@ -3,7 +3,6 @@ import torch
 import torch.nn as nn
 from model._abstract_model import SequentialRecModel
 from model._modules import LayerNorm, FeedForward, MultiHeadAttention
-from model.popularity import build_popularity_encoding, EvalPopularityEncoding
 
 class BSARecModel(SequentialRecModel):
     def __init__(self, args):
@@ -13,35 +12,12 @@ class BSARecModel(SequentialRecModel):
         self.dropout = nn.Dropout(args.hidden_dropout_prob)
         self.item_encoder = BSARecEncoder(args)
         self.use_popularity = getattr(args, "use_popularity", False)
-        self.popularity_enc = None
-        self.eval_popularity_enc = None
-        self.pop_embed = None
         if self.use_popularity:
-            self.popularity_enc = build_popularity_encoding(
-                args.input_units1,
-                args.input_units2,
-                args.base_dim1,
-                args.base_dim2,
-                args.popularity_dir,
-                args.data_name,
-            )
-            self.pop_embed = nn.Linear(
-                args.input_units1 + args.input_units2, args.hidden_size
-            )
-            if getattr(args, "use_week_eval", False):
-                self.eval_popularity_enc = build_popularity_encoding(
-                    args.input_units1,
-                    args.input_units2,
-                    args.base_dim1,
-                    args.base_dim2,
-                    args.popularity_dir,
-                    args.data_name,
-                    enable_eval=True,
-                    pause=args.pause,
-                )
+            dim = args.pop_long_dim + args.pop_short_dim
+            self.pop_linear = nn.Linear(dim, args.hidden_size)
         self.apply(self.init_weights)
 
-    def forward(self, input_ids, time1_seq, time2_seq, user_ids=None, all_sequence_output=False):
+    def forward(self, input_ids, pop_long=None, pop_short=None, user_ids=None, all_sequence_output=False):
         extended_attention_mask = self.get_attention_mask(input_ids)
 
         seq_length = input_ids.size(1)
@@ -50,17 +26,9 @@ class BSARecModel(SequentialRecModel):
         item_emb = self.item_embeddings(input_ids)
         pos_emb = self.position_embeddings(position_ids)
         sequence_emb = item_emb + pos_emb
-        pop_module = (
-            self.eval_popularity_enc
-            if (not self.training and self.eval_popularity_enc is not None)
-            else self.popularity_enc
-        )
-        if self.use_popularity and pop_module is not None:
-            if isinstance(pop_module, EvalPopularityEncoding):
-                pop_feats = pop_module(input_ids, time1_seq, time2_seq, user_ids)
-            else:
-                pop_feats = pop_module(input_ids, time1_seq, time2_seq)
-            pop_emb = self.pop_embed(pop_feats)
+        if self.use_popularity and pop_long is not None and pop_short is not None:
+            pop_feats = torch.cat((pop_long, pop_short), dim=-1)
+            pop_emb = self.pop_linear(pop_feats)
             sequence_emb = sequence_emb + pop_emb
 
         sequence_emb = self.LayerNorm(sequence_emb)
@@ -84,10 +52,10 @@ class BSARecModel(SequentialRecModel):
         neg_answers,
         same_target,
         user_ids,
-        time1_seq=None,
-        time2_seq=None,
+        pop_long=None,
+        pop_short=None,
     ):
-        seq_output = self.forward(input_ids, time1_seq, time2_seq, user_ids)
+        seq_output = self.forward(input_ids, pop_long, pop_short, user_ids)
         seq_output = seq_output[:, -1, :]
         item_emb = self.item_embeddings.weight
         logits = torch.matmul(seq_output, item_emb.transpose(0, 1))
@@ -95,8 +63,8 @@ class BSARecModel(SequentialRecModel):
 
         return loss
 
-    def predict(self, input_ids, user_ids=None, time1_seq=None, time2_seq=None, all_sequence_output=False):
-        return self.forward(input_ids, time1_seq, time2_seq, user_ids, all_sequence_output)
+    def predict(self, input_ids, user_ids=None, pop_long=None, pop_short=None, all_sequence_output=False):
+        return self.forward(input_ids, pop_long, pop_short, user_ids, all_sequence_output)
 
 class BSARecEncoder(nn.Module):
     def __init__(self, args):

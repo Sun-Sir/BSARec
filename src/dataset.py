@@ -2,6 +2,7 @@ import tqdm
 import numpy as np
 import torch
 import os
+import ast
 from scipy.sparse import csr_matrix
 from torch.utils.data import Dataset, DataLoader, RandomSampler, SequentialSampler
 import random
@@ -34,6 +35,39 @@ class RecDataset(Dataset):
             self.time_seq = time_seq
 
         self.test_neg_items = test_neg_items
+
+        # load precomputed popularity encodings
+        self.pop_long_table = None
+        self.pop_short_table = None
+        if getattr(self.args, "use_popularity", False):
+            pop_path = os.path.join(
+                self.args.popularity_dir,
+                f"{self.args.data_name}_pop_linear.txt",
+            )
+            if not os.path.exists(pop_path):
+                raise FileNotFoundError(f"Popularity encoding file not found: {pop_path}")
+            with open(pop_path) as f:
+                long_vec, short_vec = None, None
+                for line in f:
+                    parts = line.strip().split('\t')
+                    if len(parts) != 3:
+                        continue
+                    item = int(parts[0])
+                    long_vec = ast.literal_eval(parts[1])
+                    short_vec = ast.literal_eval(parts[2])
+                    if self.pop_long_table is None:
+                        self.pop_long_dim = len(long_vec)
+                        self.pop_short_dim = len(short_vec)
+                        self.pop_long_table = np.zeros(
+                            (self.args.item_size, self.pop_long_dim), dtype=np.float32
+                        )
+                        self.pop_short_table = np.zeros(
+                            (self.args.item_size, self.pop_short_dim), dtype=np.float32
+                        )
+                    self.pop_long_table[item] = np.array(long_vec, dtype=np.float32)
+                    self.pop_short_table[item] = np.array(short_vec, dtype=np.float32)
+            setattr(self.args, "pop_long_dim", self.pop_long_dim)
+            setattr(self.args, "pop_short_dim", self.pop_short_dim)
 
         if self.contrastive_learning and self.data_type=='train':
             if os.path.exists(args.same_target_path):
@@ -100,16 +134,33 @@ class RecDataset(Dataset):
         assert len(time1_seq) == self.max_len
         assert len(time2_seq) == self.max_len
 
+        if getattr(self.args, "use_popularity", False):
+            pop_long_seq = [self.pop_long_table[i] for i in input_ids]
+            pop_short_seq = [self.pop_short_table[i] for i in input_ids]
+
         if self.data_type in ['valid', 'test']:
-            cur_tensors = (
-                torch.tensor(index, dtype=torch.long),  # user_id for testing
-                torch.tensor(input_ids, dtype=torch.long),
-                torch.tensor(time1_seq, dtype=torch.long),
-                torch.tensor(time2_seq, dtype=torch.long),
-                torch.tensor(answer, dtype=torch.long),
-                torch.zeros(0, dtype=torch.long),  # not used
-                torch.zeros(0, dtype=torch.long),  # not used
-            )
+            if getattr(self.args, "use_popularity", False):
+                cur_tensors = (
+                    torch.tensor(index, dtype=torch.long),  # user_id for testing
+                    torch.tensor(input_ids, dtype=torch.long),
+                    torch.tensor(time1_seq, dtype=torch.long),
+                    torch.tensor(time2_seq, dtype=torch.long),
+                    torch.tensor(pop_long_seq, dtype=torch.float),
+                    torch.tensor(pop_short_seq, dtype=torch.float),
+                    torch.tensor(answer, dtype=torch.long),
+                    torch.zeros(0, dtype=torch.long),  # not used
+                    torch.zeros(0, dtype=torch.long),  # not used
+                )
+            else:
+                cur_tensors = (
+                    torch.tensor(index, dtype=torch.long),  # user_id for testing
+                    torch.tensor(input_ids, dtype=torch.long),
+                    torch.tensor(time1_seq, dtype=torch.long),
+                    torch.tensor(time2_seq, dtype=torch.long),
+                    torch.tensor(answer, dtype=torch.long),
+                    torch.zeros(0, dtype=torch.long),  # not used
+                    torch.zeros(0, dtype=torch.long),  # not used
+                )
 
         elif self.contrastive_learning:
             sem_augs = self.same_target_index[answer]
@@ -128,26 +179,52 @@ class RecDataset(Dataset):
             sem_aug = sem_aug[-self.max_len:]
             assert len(sem_aug) == self.max_len
 
-            cur_tensors = (
-                torch.tensor(self.user_ids[index], dtype=torch.long),  # user_id for testing
-                torch.tensor(input_ids, dtype=torch.long),
-                torch.tensor(time1_seq, dtype=torch.long),
-                torch.tensor(time2_seq, dtype=torch.long),
-                torch.tensor(answer, dtype=torch.long),
-                torch.tensor(neg_answer, dtype=torch.long),
-                torch.tensor(sem_aug, dtype=torch.long)
-            )
+            if getattr(self.args, "use_popularity", False):
+                cur_tensors = (
+                    torch.tensor(self.user_ids[index], dtype=torch.long),  # user_id for testing
+                    torch.tensor(input_ids, dtype=torch.long),
+                    torch.tensor(time1_seq, dtype=torch.long),
+                    torch.tensor(time2_seq, dtype=torch.long),
+                    torch.tensor(pop_long_seq, dtype=torch.float),
+                    torch.tensor(pop_short_seq, dtype=torch.float),
+                    torch.tensor(answer, dtype=torch.long),
+                    torch.tensor(neg_answer, dtype=torch.long),
+                    torch.tensor(sem_aug, dtype=torch.long)
+                )
+            else:
+                cur_tensors = (
+                    torch.tensor(self.user_ids[index], dtype=torch.long),  # user_id for testing
+                    torch.tensor(input_ids, dtype=torch.long),
+                    torch.tensor(time1_seq, dtype=torch.long),
+                    torch.tensor(time2_seq, dtype=torch.long),
+                    torch.tensor(answer, dtype=torch.long),
+                    torch.tensor(neg_answer, dtype=torch.long),
+                    torch.tensor(sem_aug, dtype=torch.long)
+                )
 
         else:
-            cur_tensors = (
-                torch.tensor(self.user_ids[index], dtype=torch.long),  # user_id for testing
-                torch.tensor(input_ids, dtype=torch.long),
-                torch.tensor(time1_seq, dtype=torch.long),
-                torch.tensor(time2_seq, dtype=torch.long),
-                torch.tensor(answer, dtype=torch.long),
-                torch.tensor(neg_answer, dtype=torch.long),
-                torch.zeros(0, dtype=torch.long),  # not used
-            )
+            if getattr(self.args, "use_popularity", False):
+                cur_tensors = (
+                    torch.tensor(self.user_ids[index], dtype=torch.long),  # user_id for testing
+                    torch.tensor(input_ids, dtype=torch.long),
+                    torch.tensor(time1_seq, dtype=torch.long),
+                    torch.tensor(time2_seq, dtype=torch.long),
+                    torch.tensor(pop_long_seq, dtype=torch.float),
+                    torch.tensor(pop_short_seq, dtype=torch.float),
+                    torch.tensor(answer, dtype=torch.long),
+                    torch.tensor(neg_answer, dtype=torch.long),
+                    torch.zeros(0, dtype=torch.long),  # not used
+                )
+            else:
+                cur_tensors = (
+                    torch.tensor(self.user_ids[index], dtype=torch.long),  # user_id for testing
+                    torch.tensor(input_ids, dtype=torch.long),
+                    torch.tensor(time1_seq, dtype=torch.long),
+                    torch.tensor(time2_seq, dtype=torch.long),
+                    torch.tensor(answer, dtype=torch.long),
+                    torch.tensor(neg_answer, dtype=torch.long),
+                    torch.zeros(0, dtype=torch.long),  # not used
+                )
 
         return cur_tensors
 

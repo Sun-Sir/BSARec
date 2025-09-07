@@ -40,6 +40,52 @@ def load_interactions(path: Path):
     df["timestamp"] = pd.to_datetime(df["timestamp"], unit="s")
     return df
 
+
+def discounted_cumsum(counts: np.ndarray, gamma: float) -> np.ndarray:
+    """Compute discounted cumulative popularity for each item.
+
+    Parameters
+    ----------
+    counts: 2D array where axis 0 is time (with a dummy first row) and
+        axis 1 corresponds to item indices (dummy column at 0).
+    gamma: discount factor applied to previous popularity.
+
+    Returns
+    -------
+    np.ndarray
+        Final discounted popularity per item including the dummy column.
+    """
+
+    pop = np.zeros(counts.shape[1], dtype=float)
+    for row in range(1, counts.shape[0]):
+        pop = pop * gamma + counts[row]
+    return pop
+
+
+def percentile_rank(values: np.ndarray) -> np.ndarray:
+    """Convert raw popularity scores to percentile ranks (0-100)."""
+
+    if len(values) == 0:
+        return values
+    ranks = pd.Series(values).rank(pct=True).to_numpy()
+    return ranks * 100
+
+
+def linear_encode(percentile: float, dim: int = 11) -> list:
+    """Encode a percentile into a basis vector using linear interpolation."""
+
+    step = 100 / (dim - 1)
+    frac = percentile / step
+    base = int(frac)
+    vec = [0.0] * dim
+    if base >= dim - 1:
+        vec[-1] = 1.0
+    else:
+        weight_high = frac - base
+        vec[base] = 1 - weight_high
+        vec[base + 1] = weight_high
+    return vec
+
 def aggregate_counts(
     df: pd.DataFrame, freq: str, item_map: dict, top_n: Optional[int] = None
 ):
@@ -82,6 +128,18 @@ def main():
     parser.add_argument(
         "--out_dir", type=Path, default=Path(__file__).parent, help="Directory to save results"
     )
+    parser.add_argument(
+        "--gamma_long", type=float, default=0.9, help="Discount factor for long-term popularity"
+    )
+    parser.add_argument(
+        "--gamma_short", type=float, default=0.8, help="Discount factor for short-term popularity"
+    )
+    parser.add_argument(
+        "--dim_long", type=int, default=11, help="Encoding dimension for long-term popularity"
+    )
+    parser.add_argument(
+        "--dim_short", type=int, default=11, help="Encoding dimension for short-term popularity"
+    )
     args = parser.parse_args()
 
     df = load_interactions(args.input)
@@ -96,6 +154,15 @@ def main():
     week_eval = np.zeros((2, week_counts.shape[1]), dtype=int)
     week_eval[1] = week_counts[latest_week]
 
+    long_pop = discounted_cumsum(month_counts, args.gamma_long)[1:]
+    short_pop = discounted_cumsum(week_counts, args.gamma_short)[1:]
+
+    long_pct = percentile_rank(long_pop)
+    short_pct = percentile_rank(short_pop)
+
+    long_enc = [linear_encode(p, args.dim_long) for p in long_pct]
+    short_enc = [linear_encode(p, args.dim_short) for p in short_pct]
+
     args.out_dir.mkdir(parents=True, exist_ok=True)
     np.savetxt(
         args.out_dir / f"{args.dataset}_month_pop.txt", month_counts, fmt="%d"
@@ -106,6 +173,13 @@ def main():
     np.savetxt(
         args.out_dir / f"{args.dataset}_week_eval_pop.txt", week_eval, fmt="%d"
     )
+
+    pop_enc_path = args.out_dir / f"{args.dataset}_pop_linear.txt"
+    with pop_enc_path.open("w") as f:
+        for item_id, idx in sorted(item_map.items()):
+            long_vec = [float(x) for x in long_enc[idx - 1]]
+            short_vec = [float(x) for x in short_enc[idx - 1]]
+            f.write(f"{item_id}\t{long_vec}\t{short_vec}\n")
 
 if __name__ == "__main__":
     main()
