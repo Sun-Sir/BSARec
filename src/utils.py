@@ -79,7 +79,7 @@ def parse_args():
     parser.add_argument("--variance", default=5, type=float)
 
     # popularity encoding args
-    parser.add_argument("--popularity_dir", default="./data/", type=str)
+    parser.add_argument("--popularity_dir", default="./data/popularity", type=str)
     parser.add_argument("--monthpop", default="wtembed", type=str)
     parser.add_argument("--weekpop", default="week_embed2", type=str)
     parser.add_argument("--week_eval_pop", default="week_wt_embed_adj", type=str)
@@ -108,8 +108,8 @@ def parse_args():
     if args.model_type.lower() == 'bsarec':
         parser.add_argument("--c", default=3, type=int)
         parser.add_argument("--alpha", default=0.9, type=float)
-        parser.add_argument("--input_units1", default=1, type=int)
-        parser.add_argument("--input_units2", default=1, type=int)
+        # parser.add_argument("--input_units1", default=1, type=int)
+        # parser.add_argument("--input_units2", default=1, type=int)
 
     elif args.model_type.lower() == 'bert4rec':
         parser.add_argument("--mask_ratio", default=0.2, type=float)

@@ -3,6 +3,8 @@ import numpy as np
 import torch
 import os
 import ast
+
+from scipy.constants import short_ton
 from scipy.sparse import csr_matrix
 from torch.utils.data import Dataset, DataLoader, RandomSampler, SequentialSampler
 import random
@@ -140,6 +142,8 @@ class RecDataset(Dataset):
 
         if self.data_type in ['valid', 'test']:
             if getattr(self.args, "use_popularity", False):
+                pop_long_seq = np.array(pop_long_seq)
+                pop_short_seq = np.array(pop_short_seq)
                 cur_tensors = (
                     torch.tensor(index, dtype=torch.long),  # user_id for testing
                     torch.tensor(input_ids, dtype=torch.long),
@@ -180,6 +184,8 @@ class RecDataset(Dataset):
             assert len(sem_aug) == self.max_len
 
             if getattr(self.args, "use_popularity", False):
+                pop_long_seq = np.array(pop_long_seq)
+                pop_short_seq = np.array(pop_short_seq)
                 cur_tensors = (
                     torch.tensor(self.user_ids[index], dtype=torch.long),  # user_id for testing
                     torch.tensor(input_ids, dtype=torch.long),
@@ -204,6 +210,8 @@ class RecDataset(Dataset):
 
         else:
             if getattr(self.args, "use_popularity", False):
+                pop_long_seq = np.array(pop_long_seq)
+                pop_short_seq = np.array(pop_short_seq)
                 cur_tensors = (
                     torch.tensor(self.user_ids[index], dtype=torch.long),  # user_id for testing
                     torch.tensor(input_ids, dtype=torch.long),
