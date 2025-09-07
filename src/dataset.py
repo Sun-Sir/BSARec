@@ -22,8 +22,30 @@ class RecDataset(Dataset):
 
         if self.data_type=='train':
             for user, seq in enumerate(user_seq):
-                input_ids = seq[-(self.max_len + 2):-2]
-                input_times = time_seq[user][-(self.max_len + 2):-2]
+                """
+                By default the original implementation excludes the last two
+                interactions of each user (validation and test items) from the
+                training data. To intentionally leak a portion of the test data
+                into the training set we allow including the last interaction
+                for a random subset of users controlled by
+                ``args.test_train_ratio``.
+
+                When ``test_train_ratio`` > 0 and the current user is selected,
+                we keep the entire sequence (including the test item) for
+                training. Otherwise we follow the original behaviour and remove
+                the last two items.
+                """
+
+                if getattr(args, 'test_train_ratio', 0) > 0 \
+                        and random.random() < args.test_train_ratio:
+                    # Include the test item in the training sequence
+                    input_ids = seq[-(self.max_len + 1):]
+                    input_times = time_seq[user][-(self.max_len + 1):]
+                else:
+                    # Original behaviour: exclude validation and test items
+                    input_ids = seq[-(self.max_len + 2):-2]
+                    input_times = time_seq[user][-(self.max_len + 2):-2]
+
                 for i in range(len(input_ids)):
                     self.user_seq.append(input_ids[:i + 1])
                     self.time_seq.append(input_times[:i + 1])
