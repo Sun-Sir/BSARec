@@ -70,6 +70,12 @@ def parse_args():
     parser.add_argument("--log_freq", default=1, type=int, help="per epoch print res")
     parser.add_argument("--patience", default=10, type=int, help="how long to wait after last time validation loss improved")
     parser.add_argument("--num_workers", default=4, type=int)
+    parser.add_argument(
+        "--test_train_ratio",
+        default=0.0,
+        type=float,
+        help="fraction of users whose test interaction is leaked into training",
+    )
 
     parser.add_argument("--seed", default=42, type=int)
     parser.add_argument("--weight_decay", default=0.0, type=float, help="weight_decay of adam")
