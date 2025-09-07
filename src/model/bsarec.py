@@ -100,12 +100,21 @@ class BSARecLayer(nn.Module):
         self.args = args
         self.filter_layer = FrequencyLayer(args)
         self.attention_layer = MultiHeadAttention(args)
-        self.alpha = args.alpha
+        hidden = args.hidden_size
+        # Learnable gating network for adaptive fusion of frequency and feature domains
+        self.gate = nn.Sequential(
+            nn.Linear(hidden * 2, hidden),
+            nn.GELU(),
+            nn.Linear(hidden, hidden),
+            nn.Sigmoid(),
+        )
 
     def forward(self, input_tensor, attention_mask):
         dsp = self.filter_layer(input_tensor)
         gsp = self.attention_layer(input_tensor, attention_mask)
-        hidden_states = self.alpha * dsp + ( 1 - self.alpha ) * gsp
+        fusion = torch.cat([dsp, gsp], dim=-1)
+        gate = self.gate(fusion)
+        hidden_states = gate * dsp + (1 - gate) * gsp
 
         return hidden_states
     
