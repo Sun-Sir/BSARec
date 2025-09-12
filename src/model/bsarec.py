@@ -29,6 +29,8 @@ class BSARecModel(SequentialRecModel):
         if self.use_popularity and pop_long is not None and pop_short is not None:
             pop_feats = torch.cat((pop_long, pop_short), dim=-1)
             pop_emb = self.pop_linear(pop_feats)
+            pop_emb = self.LayerNorm(pop_emb)
+            pop_emb = self.dropout(pop_emb)
             sequence_emb = sequence_emb + pop_emb
 
         sequence_emb = self.LayerNorm(sequence_emb)
@@ -115,7 +117,6 @@ class BSARecLayer(nn.Module):
         fusion = torch.cat([dsp, gsp], dim=-1)
         gate = self.gate(fusion)
         hidden_states = gate * dsp + (1 - gate) * gsp
-
         return hidden_states
     
 class FrequencyLayer(nn.Module):
