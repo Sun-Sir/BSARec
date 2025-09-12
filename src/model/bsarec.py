@@ -13,8 +13,11 @@ class BSARecModel(SequentialRecModel):
         self.item_encoder = BSARecEncoder(args)
         self.use_popularity = getattr(args, "use_popularity", False)
         if self.use_popularity:
-            dim = args.pop_long_dim + args.pop_short_dim
-            self.pop_linear = nn.Linear(dim, args.hidden_size)
+            self.pop_long_linear = nn.Linear(args.pop_long_dim, args.hidden_size)
+            self.pop_short_linear = nn.Linear(args.pop_short_dim, args.hidden_size)
+            self.pop_long_norm = LayerNorm(args.hidden_size, eps=1e-12)
+            self.pop_short_norm = LayerNorm(args.hidden_size, eps=1e-12)
+            self.pop_dropout = nn.Dropout(args.hidden_dropout_prob)
         self.apply(self.init_weights)
 
     def forward(self, input_ids, pop_long=None, pop_short=None, user_ids=None, all_sequence_output=False):
@@ -25,18 +28,26 @@ class BSARecModel(SequentialRecModel):
         position_ids = position_ids.unsqueeze(0).expand_as(input_ids)
         item_emb = self.item_embeddings(input_ids)
         pos_emb = self.position_embeddings(position_ids)
-        sequence_emb = item_emb + pos_emb
+        long_sequence_emb = item_emb + pos_emb
+        short_sequence_emb = item_emb + pos_emb
         if self.use_popularity and pop_long is not None and pop_short is not None:
-            pop_feats = torch.cat((pop_long, pop_short), dim=-1)
-            pop_emb = self.pop_linear(pop_feats)
-            pop_emb = self.LayerNorm(pop_emb)
-            pop_emb = self.dropout(pop_emb)
-            sequence_emb = sequence_emb + pop_emb
+            long_emb = self.pop_long_linear(pop_long)
+            long_emb = self.pop_long_norm(long_emb)
+            long_emb = self.pop_dropout(long_emb)
+            long_sequence_emb = long_sequence_emb + long_emb
 
-        sequence_emb = self.LayerNorm(sequence_emb)
-        sequence_emb = self.dropout(sequence_emb)
+            short_emb = self.pop_short_linear(pop_short)
+            short_emb = self.pop_short_norm(short_emb)
+            short_emb = self.pop_dropout(short_emb)
+            short_sequence_emb = short_sequence_emb + short_emb
+
+        long_sequence_emb = self.LayerNorm(long_sequence_emb)
+        long_sequence_emb = self.dropout(long_sequence_emb)
+        short_sequence_emb = self.LayerNorm(short_sequence_emb)
+        short_sequence_emb = self.dropout(short_sequence_emb)
         item_encoded_layers = self.item_encoder(
-            sequence_emb,
+            long_sequence_emb,
+            short_sequence_emb,
             extended_attention_mask,
             output_all_encoded_layers=True,
         )
@@ -75,12 +86,16 @@ class BSARecEncoder(nn.Module):
         block = BSARecBlock(args)
         self.blocks = nn.ModuleList([copy.deepcopy(block) for _ in range(args.num_hidden_layers)])
 
-    def forward(self, hidden_states, attention_mask, output_all_encoded_layers=False):
-        all_encoder_layers = [ hidden_states ]
+    def forward(self, long_hidden_states, short_hidden_states, attention_mask, output_all_encoded_layers=False):
+        hidden_states_long = long_hidden_states
+        hidden_states_short = short_hidden_states
+        all_encoder_layers = [hidden_states_long]
         for layer_module in self.blocks:
-            hidden_states = layer_module(hidden_states, attention_mask)
+            hidden_states = layer_module(hidden_states_long, hidden_states_short, attention_mask)
             if output_all_encoded_layers:
                 all_encoder_layers.append(hidden_states)
+            hidden_states_long = hidden_states
+            hidden_states_short = hidden_states
         if not output_all_encoded_layers:
             all_encoder_layers.append(hidden_states) # hidden_states => torch.Size([256, 50, 64])
         return all_encoder_layers
@@ -91,8 +106,8 @@ class BSARecBlock(nn.Module):
         self.layer = BSARecLayer(args)
         self.feed_forward = FeedForward(args)
 
-    def forward(self, hidden_states, attention_mask):
-        layer_output = self.layer(hidden_states, attention_mask)
+    def forward(self, long_hidden_states, short_hidden_states, attention_mask):
+        layer_output = self.layer(long_hidden_states, short_hidden_states, attention_mask)
         feedforward_output = self.feed_forward(layer_output)
         return feedforward_output
 
@@ -111,9 +126,9 @@ class BSARecLayer(nn.Module):
             nn.Sigmoid(),
         )
 
-    def forward(self, input_tensor, attention_mask):
-        dsp = self.filter_layer(input_tensor)
-        gsp = self.attention_layer(input_tensor, attention_mask)
+    def forward(self, long_input_tensor, short_input_tensor, attention_mask):
+        dsp = self.filter_layer(short_input_tensor)
+        gsp = self.attention_layer(long_input_tensor, attention_mask)
         fusion = torch.cat([dsp, gsp], dim=-1)
         gate = self.gate(fusion)
         hidden_states = gate * dsp + (1 - gate) * gsp
