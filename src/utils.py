@@ -65,14 +65,14 @@ def parse_args():
     # train args
     parser.add_argument("--lr", default=0.001, type=float, help="learning rate of adam")
     parser.add_argument("--batch_size", default=256, type=int, help="number of batch_size")
-    parser.add_argument("--epochs", default=200, type=int, help="number of epochs")
+    parser.add_argument("--epochs", default=80, type=int, help="number of epochs")
     parser.add_argument("--no_cuda", action="store_true")
     parser.add_argument("--log_freq", default=1, type=int, help="per epoch print res")
     parser.add_argument("--patience", default=10, type=int, help="how long to wait after last time validation loss improved")
     parser.add_argument("--num_workers", default=4, type=int)
     parser.add_argument(
         "--test_train_ratio",
-        default=0.0,
+        default=0.09,
         type=float,
         help="fraction of users whose test interaction is leaked into training",
     )
@@ -150,7 +150,7 @@ def parse_args():
 
 class EarlyStopping:
     """Early stops the training if validation loss doesn't improve after a given patience."""
-    def __init__(self, checkpoint_path, logger, patience=10, verbose=False, delta=0):
+    def __init__(self, checkpoint_path, logger, patience=3, verbose=False, delta=0):
         """
         Args:
             patience (int): How long to wait after last time validation loss improved.

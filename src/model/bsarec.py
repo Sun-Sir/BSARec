@@ -41,10 +41,6 @@ class BSARecModel(SequentialRecModel):
             short_emb = self.pop_dropout(short_emb)
             short_sequence_emb = short_sequence_emb + short_emb
 
-        long_sequence_emb = self.LayerNorm(long_sequence_emb)
-        long_sequence_emb = self.dropout(long_sequence_emb)
-        short_sequence_emb = self.LayerNorm(short_sequence_emb)
-        short_sequence_emb = self.dropout(short_sequence_emb)
         item_encoded_layers = self.item_encoder(
             long_sequence_emb,
             short_sequence_emb,

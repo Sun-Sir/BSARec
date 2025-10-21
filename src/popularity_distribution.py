@@ -17,7 +17,6 @@ from typing import Iterable, Tuple
 
 logger = logging.getLogger(__name__)
 
-
 def parse_line(line: str, line_number: int) -> Iterable[str]:
     """Extract item identifiers from a line of the dataset.
 
@@ -42,17 +41,47 @@ def parse_line(line: str, line_number: int) -> Iterable[str]:
         logger.debug("Line %d only contains a user identifier; skipping", line_number)
         return
 
+    # 从第二列开始，提取每个项的 id（即冒号前的部分）
     interactions = parts[1:]
-    if len(interactions) % 2 != 0:
-        logger.warning(
-            "Line %d has an odd number of tokens after the user id; "
-            "the last token will be ignored.",
-            line_number,
-        )
-        interactions = interactions[:-1]
+    for interaction in interactions:
+        item_id = interaction.split(':')[0]  # 只提取 item_id，忽略时间戳
+        yield item_id
 
-    for index in range(0, len(interactions), 2):
-        yield interactions[index]
+# def parse_line(line: str, line_number: int) -> Iterable[str]:
+#     """Extract item identifiers from a line of the dataset.
+#
+#     Parameters
+#     ----------
+#     line:
+#         A raw line from the dataset file.
+#     line_number:
+#         The line number (1-indexed) for logging purposes.
+#
+#     Yields
+#     ------
+#     str
+#         The item identifiers present in the line.
+#     """
+#
+#     parts = line.strip().split()
+#     if not parts:
+#         return
+#
+#     if len(parts) == 1:
+#         logger.debug("Line %d only contains a user identifier; skipping", line_number)
+#         return
+#
+#     interactions = parts[1:]
+#     if len(interactions) % 2 != 0:
+#         logger.warning(
+#             "Line %d has an odd number of tokens after the user id; "
+#             "the last token will be ignored.",
+#             line_number,
+#         )
+#         interactions = interactions[:-1]
+#
+#     for index in range(0, len(interactions), 2):
+#         yield interactions[index]
 
 
 def count_item_interactions(path: Path) -> Tuple[Counter, int]:
@@ -66,7 +95,8 @@ def count_item_interactions(path: Path) -> Tuple[Counter, int]:
             for item in parse_line(line, line_number):
                 item_counts[item] += 1
                 total += 1
-
+                # break
+    # print(item_counts)
     return item_counts, total
 
 
@@ -77,7 +107,6 @@ def compute_coverage(item_counts: Counter[str], total_interactions: int) -> Iter
         for percent in range(10, 101, 10):
             yield percent, 0.0
         return
-
     sorted_counts = sorted(item_counts.values(), reverse=True)
     prefix_sums = []
     cumulative = 0
@@ -86,7 +115,7 @@ def compute_coverage(item_counts: Counter[str], total_interactions: int) -> Iter
         prefix_sums.append(cumulative)
 
     num_items = len(sorted_counts)
-    for percent in range(10, 101, 10):
+    for percent in [0.1,1,5,10,20, 50, 60,80,100]:
         top_k = max(1, math.ceil(percent / 100 * num_items))
         interactions_in_top = prefix_sums[top_k - 1]
         coverage = interactions_in_top / total_interactions
