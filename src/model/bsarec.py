@@ -12,12 +12,22 @@ class BSARecModel(SequentialRecModel):
         self.dropout = nn.Dropout(args.hidden_dropout_prob)
         self.item_encoder = BSARecEncoder(args)
         self.use_popularity = getattr(args, "use_popularity", False)
+        self.use_long_popularity = getattr(args, "use_long_popularity", True)
+        self.use_short_popularity = getattr(args, "use_short_popularity", True)
         if self.use_popularity:
-            self.pop_long_linear = nn.Linear(args.pop_long_dim, args.hidden_size)
-            self.pop_short_linear = nn.Linear(args.pop_short_dim, args.hidden_size)
-            self.pop_long_norm = LayerNorm(args.hidden_size, eps=1e-12)
-            self.pop_short_norm = LayerNorm(args.hidden_size, eps=1e-12)
             self.pop_dropout = nn.Dropout(args.hidden_dropout_prob)
+            if self.use_long_popularity:
+                self.pop_long_mapper = nn.Sequential(
+                    nn.Linear(args.hidden_size + args.pop_long_dim, args.hidden_size),
+                    nn.GELU(),
+                )
+                self.pop_long_norm = LayerNorm(args.hidden_size, eps=1e-12)
+            if self.use_short_popularity:
+                self.pop_short_mapper = nn.Sequential(
+                    nn.Linear(args.hidden_size + args.pop_short_dim, args.hidden_size),
+                    nn.GELU(),
+                )
+                self.pop_short_norm = LayerNorm(args.hidden_size, eps=1e-12)
         self.apply(self.init_weights)
 
     def forward(self, input_ids, pop_long=None, pop_short=None, user_ids=None, all_sequence_output=False):
@@ -28,18 +38,24 @@ class BSARecModel(SequentialRecModel):
         position_ids = position_ids.unsqueeze(0).expand_as(input_ids)
         item_emb = self.item_embeddings(input_ids)
         pos_emb = self.position_embeddings(position_ids)
-        long_sequence_emb = item_emb + pos_emb
-        short_sequence_emb = item_emb + pos_emb
-        if self.use_popularity and pop_long is not None and pop_short is not None:
-            long_emb = self.pop_long_linear(pop_long)
-            long_emb = self.pop_long_norm(long_emb)
-            long_emb = self.pop_dropout(long_emb)
-            long_sequence_emb = long_sequence_emb + long_emb
+        if self.use_popularity and self.use_long_popularity and pop_long is not None:
+            long_input = torch.cat([item_emb, pop_long], dim=-1)
+            long_sequence_emb = self.pop_long_mapper(long_input)
+            long_sequence_emb = self.pop_long_norm(long_sequence_emb)
+            long_sequence_emb = self.pop_dropout(long_sequence_emb)
+        else:
+            long_sequence_emb = item_emb
 
-            short_emb = self.pop_short_linear(pop_short)
-            short_emb = self.pop_short_norm(short_emb)
-            short_emb = self.pop_dropout(short_emb)
-            short_sequence_emb = short_sequence_emb + short_emb
+        if self.use_popularity and self.use_short_popularity and pop_short is not None:
+            short_input = torch.cat([item_emb, pop_short], dim=-1)
+            short_sequence_emb = self.pop_short_mapper(short_input)
+            short_sequence_emb = self.pop_short_norm(short_sequence_emb)
+            short_sequence_emb = self.pop_dropout(short_sequence_emb)
+        else:
+            short_sequence_emb = item_emb
+
+        long_sequence_emb = long_sequence_emb + pos_emb
+        short_sequence_emb = short_sequence_emb + pos_emb
 
         item_encoded_layers = self.item_encoder(
             long_sequence_emb,
@@ -111,23 +127,40 @@ class BSARecLayer(nn.Module):
     def __init__(self, args):
         super(BSARecLayer, self).__init__()
         self.args = args
-        self.filter_layer = FrequencyLayer(args)
-        self.attention_layer = MultiHeadAttention(args)
+        self.use_frequency = getattr(args, "use_frequency_domain", True)
+        self.use_time = getattr(args, "use_time_domain", True)
+        if self.use_frequency:
+            self.filter_layer = FrequencyLayer(args)
+        if self.use_time:
+            self.attention_layer = MultiHeadAttention(args)
         hidden = args.hidden_size
         # Learnable gating network for adaptive fusion of frequency and feature domains
-        self.gate = nn.Sequential(
-            nn.Linear(hidden * 2, hidden),
-            nn.GELU(),
-            nn.Linear(hidden, hidden),
-            nn.Sigmoid(),
-        )
+        if self.use_frequency and self.use_time:
+            self.gate = nn.Sequential(
+                nn.Linear(hidden * 2, hidden),
+                nn.GELU(),
+                nn.Linear(hidden, hidden),
+                nn.Sigmoid(),
+            )
 
     def forward(self, long_input_tensor, short_input_tensor, attention_mask):
-        dsp = self.filter_layer(short_input_tensor)
-        gsp = self.attention_layer(long_input_tensor, attention_mask)
-        fusion = torch.cat([dsp, gsp], dim=-1)
-        gate = self.gate(fusion)
-        hidden_states = gate * dsp + (1 - gate) * gsp
+        dsp = None
+        gsp = None
+        if self.use_frequency:
+            dsp = self.filter_layer(short_input_tensor)
+        if self.use_time:
+            gsp = self.attention_layer(long_input_tensor, attention_mask)
+
+        if self.use_frequency and self.use_time:
+            fusion = torch.cat([dsp, gsp], dim=-1)
+            gate = self.gate(fusion)
+            hidden_states = gate * dsp + (1 - gate) * gsp
+        elif self.use_frequency:
+            hidden_states = dsp
+        elif self.use_time:
+            hidden_states = gsp
+        else:
+            hidden_states = long_input_tensor
         return hidden_states
     
 class FrequencyLayer(nn.Module):
