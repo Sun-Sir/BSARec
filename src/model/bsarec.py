@@ -17,10 +17,16 @@ class BSARecModel(SequentialRecModel):
         if self.use_popularity:
             self.pop_dropout = nn.Dropout(args.hidden_dropout_prob)
             if self.use_long_popularity:
-                self.pop_long_linear = nn.Linear(args.pop_long_dim, args.hidden_size)
+                self.pop_long_mapper = nn.Sequential(
+                    nn.Linear(args.hidden_size + args.pop_long_dim, args.hidden_size),
+                    nn.GELU(),
+                )
                 self.pop_long_norm = LayerNorm(args.hidden_size, eps=1e-12)
             if self.use_short_popularity:
-                self.pop_short_linear = nn.Linear(args.pop_short_dim, args.hidden_size)
+                self.pop_short_mapper = nn.Sequential(
+                    nn.Linear(args.hidden_size + args.pop_short_dim, args.hidden_size),
+                    nn.GELU(),
+                )
                 self.pop_short_norm = LayerNorm(args.hidden_size, eps=1e-12)
         self.apply(self.init_weights)
 
@@ -32,20 +38,24 @@ class BSARecModel(SequentialRecModel):
         position_ids = position_ids.unsqueeze(0).expand_as(input_ids)
         item_emb = self.item_embeddings(input_ids)
         pos_emb = self.position_embeddings(position_ids)
-        long_sequence_emb = item_emb + pos_emb
-        short_sequence_emb = item_emb + pos_emb
-        if self.use_popularity:
-            if self.use_long_popularity and pop_long is not None:
-                long_emb = self.pop_long_linear(pop_long)
-                long_emb = self.pop_long_norm(long_emb)
-                long_emb = self.pop_dropout(long_emb)
-                long_sequence_emb = long_sequence_emb + long_emb
+        if self.use_popularity and self.use_long_popularity and pop_long is not None:
+            long_input = torch.cat([item_emb, pop_long], dim=-1)
+            long_sequence_emb = self.pop_long_mapper(long_input)
+            long_sequence_emb = self.pop_long_norm(long_sequence_emb)
+            long_sequence_emb = self.pop_dropout(long_sequence_emb)
+        else:
+            long_sequence_emb = item_emb
 
-            if self.use_short_popularity and pop_short is not None:
-                short_emb = self.pop_short_linear(pop_short)
-                short_emb = self.pop_short_norm(short_emb)
-                short_emb = self.pop_dropout(short_emb)
-                short_sequence_emb = short_sequence_emb + short_emb
+        if self.use_popularity and self.use_short_popularity and pop_short is not None:
+            short_input = torch.cat([item_emb, pop_short], dim=-1)
+            short_sequence_emb = self.pop_short_mapper(short_input)
+            short_sequence_emb = self.pop_short_norm(short_sequence_emb)
+            short_sequence_emb = self.pop_dropout(short_sequence_emb)
+        else:
+            short_sequence_emb = item_emb
+
+        long_sequence_emb = long_sequence_emb + pos_emb
+        short_sequence_emb = short_sequence_emb + pos_emb
 
         item_encoded_layers = self.item_encoder(
             long_sequence_emb,
