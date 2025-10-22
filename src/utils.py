@@ -48,6 +48,17 @@ def get_local_time():
 
     return cur
 
+def str2bool(value):
+    if isinstance(value, bool):
+        return value
+    value_lower = value.lower()
+    if value_lower in {"true", "t", "1", "yes", "y"}:
+        return True
+    if value_lower in {"false", "f", "0", "no", "n"}:
+        return False
+    raise argparse.ArgumentTypeError(f"Boolean value expected, got '{value}'.")
+
+
 def parse_args():
 
     parser = argparse.ArgumentParser()
@@ -114,6 +125,30 @@ def parse_args():
     if args.model_type.lower() == 'bsarec':
         parser.add_argument("--c", default=3, type=int)
         parser.add_argument("--alpha", default=0.9, type=float)
+        parser.add_argument(
+            "--use_long_popularity",
+            type=str2bool,
+            default=True,
+            help="Enable long-term popularity embeddings.",
+        )
+        parser.add_argument(
+            "--use_short_popularity",
+            type=str2bool,
+            default=True,
+            help="Enable short-term popularity embeddings.",
+        )
+        parser.add_argument(
+            "--use_frequency_domain",
+            type=str2bool,
+            default=True,
+            help="Enable frequency-domain modeling branch.",
+        )
+        parser.add_argument(
+            "--use_time_domain",
+            type=str2bool,
+            default=True,
+            help="Enable time-domain (attention) modeling branch.",
+        )
         # parser.add_argument("--input_units1", default=1, type=int)
         # parser.add_argument("--input_units2", default=1, type=int)
 
