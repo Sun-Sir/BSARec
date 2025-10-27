@@ -60,8 +60,8 @@ def main():
 
             trainer.train(epoch)
             scores, _ = trainer.valid(epoch)
-            # evaluate on MRR
-            early_stopping(np.array(scores[-1:]), trainer.model)
+            # evaluate on NDCG@20 for early stopping consistency
+            early_stopping(np.array([scores[5]]), trainer.model)
             if early_stopping.early_stop:
                 logger.info("Early stopping")
                 break
