@@ -67,20 +67,43 @@ class Trainer:
         rating_pred = torch.matmul(seq_out, test_item_emb.transpose(0, 1))
         return rating_pred
 
+    def _compute_coverage(self, pred_list, top_k):
+        if pred_list is None or len(pred_list) == 0:
+            return 0.0
+
+        topk_candidates = pred_list[:, :top_k].reshape(-1)
+        unique_items = np.unique(topk_candidates)
+
+        valid_items = unique_items[(unique_items > 0) & (unique_items < self.args.item_size)]
+
+        total_items = max(self.args.item_size - 1, 1)
+        return len(valid_items) / total_items
+
     def get_full_sort_score(self, epoch, answers, pred_list):
         recall, ndcg = [], []
         for k in [5, 10, 15, 20]:
             recall.append(recall_at_k(answers, pred_list, k))
             ndcg.append(ndcg_k(answers, pred_list, k))
+
+        coverage_at_5 = self._compute_coverage(pred_list, top_k=5)
         post_fix = {
             "Epoch": epoch,
             "HR@5": '{:.4f}'.format(recall[0]), "NDCG@5": '{:.4f}'.format(ndcg[0]),
             "HR@10": '{:.4f}'.format(recall[1]), "NDCG@10": '{:.4f}'.format(ndcg[1]),
-            "HR@20": '{:.4f}'.format(recall[3]), "NDCG@20": '{:.4f}'.format(ndcg[3])
+            "HR@20": '{:.4f}'.format(recall[3]), "NDCG@20": '{:.4f}'.format(ndcg[3]),
+            "Coverage@5": '{:.4f}'.format(coverage_at_5),
         }
         self.logger.info(post_fix)
 
-        return [recall[0], ndcg[0], recall[1], ndcg[1], recall[3], ndcg[3]], str(post_fix)
+        return [
+            recall[0],
+            ndcg[0],
+            recall[1],
+            ndcg[1],
+            recall[3],
+            ndcg[3],
+            coverage_at_5,
+        ], str(post_fix)
 
     def iteration(self, epoch, dataloader, train=True):
 
