@@ -149,6 +149,13 @@ def parse_args():
             default=True,
             help="Enable time-domain (attention) modeling branch.",
         )
+        parser.add_argument(
+            "--fusion_method",
+            type=str,
+            default="gate",
+            choices=["gate", "add", "concat"],
+            help="Fusion strategy when combining frequency and time branches.",
+        )
         # parser.add_argument("--input_units1", default=1, type=int)
         # parser.add_argument("--input_units2", default=1, type=int)
 
