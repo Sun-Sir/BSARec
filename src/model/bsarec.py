@@ -133,6 +133,7 @@ class BSARecLayer(nn.Module):
         self.args = args
         self.use_frequency = getattr(args, "use_frequency_domain", True)
         self.use_time = getattr(args, "use_time_domain", True)
+        self.fusion_method = getattr(args, "fusion_method", "gate").lower()
         if self.use_frequency:
             self.filter_layer = FrequencyLayer(args)
         if self.use_time:
@@ -140,12 +141,21 @@ class BSARecLayer(nn.Module):
         hidden = args.hidden_size
         # Learnable gating network for adaptive fusion of frequency and feature domains
         if self.use_frequency and self.use_time:
-            self.gate = nn.Sequential(
-                nn.Linear(hidden * 2, hidden),
-                nn.GELU(),
-                nn.Linear(hidden, hidden),
-                nn.Sigmoid(),
-            )
+            if self.fusion_method not in {"gate", "add", "concat"}:
+                raise ValueError(f"Unsupported fusion method: {self.fusion_method}")
+            if self.fusion_method == "gate":
+                self.gate = nn.Sequential(
+                    nn.Linear(hidden * 2, hidden),
+                    nn.GELU(),
+                    nn.Linear(hidden, hidden),
+                    nn.Sigmoid(),
+                )
+            elif self.fusion_method == "concat":
+                self.fusion_mapper = nn.Sequential(
+                    nn.Linear(hidden * 2, hidden),
+                    nn.GELU(),
+                    nn.Linear(hidden, hidden),
+                )
 
     def forward(self, long_input_tensor, short_input_tensor, attention_mask):
         dsp = None
@@ -156,9 +166,17 @@ class BSARecLayer(nn.Module):
             gsp = self.attention_layer(long_input_tensor, attention_mask)
 
         if self.use_frequency and self.use_time:
-            fusion = torch.cat([dsp, gsp], dim=-1)
-            gate = self.gate(fusion)
-            hidden_states = gate * dsp + (1 - gate) * gsp
+            if self.fusion_method == "gate":
+                fusion = torch.cat([dsp, gsp], dim=-1)
+                gate = self.gate(fusion)
+                hidden_states = gate * dsp + (1 - gate) * gsp
+            elif self.fusion_method == "add":
+                hidden_states = dsp + gsp
+            elif self.fusion_method == "concat":
+                fusion = torch.cat([dsp, gsp], dim=-1)
+                hidden_states = self.fusion_mapper(fusion)
+            else:
+                raise ValueError(f"Unsupported fusion method during forward: {self.fusion_method}")
         elif self.use_frequency:
             hidden_states = dsp
         elif self.use_time:
