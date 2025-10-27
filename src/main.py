@@ -4,7 +4,14 @@ import numpy as np
 
 from model import MODEL_DICT
 from trainers import Trainer
-from utils import EarlyStopping, check_path, set_seed, parse_args, set_logger
+from utils import (
+    EarlyStopping,
+    append_run_history,
+    check_path,
+    set_seed,
+    parse_args,
+    set_logger,
+)
 from dataset import get_seq_dic, get_dataloder, get_rating_matrix
 
 def main():
@@ -65,6 +72,7 @@ def main():
 
     logger.info(args.train_name)
     logger.info(result_info)
-
+    if not args.do_eval:
+        append_run_history(args, result_info)
 
 main()

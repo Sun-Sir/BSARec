@@ -66,7 +66,7 @@ class RecDataset(Dataset):
         if getattr(self.args, "use_popularity", False):
             pop_path = os.path.join(
                 self.args.popularity_dir,
-                f"{self.args.data_name}_pop_linear.txt",
+                f"{self.args.data_name}_pop_linear_{self.args.pop_dim}.txt",
             )
             if not os.path.exists(pop_path):
                 raise FileNotFoundError(f"Popularity encoding file not found: {pop_path}")

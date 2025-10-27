@@ -108,7 +108,7 @@ def parse_args():
     parser.add_argument("--use_week_eval", action="store_true")
     parser.add_argument("--pause", default=0, type=int)
     parser.add_argument("--use_popularity", action="store_true", help="enable PopularityEncoding")
-
+    parser.add_argument("--pop_dim",default=11, type=int)
     # model args
     parser.add_argument("--model_type", default='BSARec', type=str)
     parser.add_argument("--max_seq_length", default=50, type=int)
@@ -142,6 +142,12 @@ def parse_args():
             type=str2bool,
             default=True,
             help="Enable frequency-domain modeling branch.",
+        )
+        parser.add_argument(
+            "--run_history_file",
+            default="train_history.txt",
+            type=str,
+            help="Filename (or path) for appending training summaries.",
         )
         parser.add_argument(
             "--use_time_domain",
@@ -189,7 +195,40 @@ def parse_args():
         parser.add_argument("--gru_hidden_size", default=64, type=int, help="hidden size of GRU")
 
     return parser.parse_args()
+def _summarize_args(args):
+    """Extract a lightweight representation of the runtime arguments."""
 
+    simple_types = (int, float, str, bool)
+    summary = {}
+    for key, value in vars(args).items():
+        if isinstance(value, simple_types) or value is None:
+            summary[key] = value
+        elif isinstance(value, (list, tuple)):
+            summary[key] = [
+                item if isinstance(item, simple_types) or item is None else str(type(item).__name__)
+                for item in value
+            ]
+        else:
+            summary[key] = str(type(value).__name__)
+    return summary
+
+
+def append_run_history(args, result_info):
+    """Append the training configuration and results to a persistent log file."""
+
+    history_file = getattr(args, "run_history_file", "train_history.txt")
+    if not os.path.isabs(history_file):
+        history_file = os.path.join(args.output_dir, history_file)
+
+    history_dir = os.path.dirname(history_file)
+    if history_dir:
+        check_path(history_dir)
+
+    summary = _summarize_args(args)
+    entry = f"{get_local_time()}\tArgs: {summary}\tResult: {result_info}\n"
+
+    with open(history_file, "a", encoding="utf-8") as fp:
+        fp.write(entry)
 class EarlyStopping:
     """Early stops the training if validation loss doesn't improve after a given patience."""
     def __init__(self, checkpoint_path, logger, patience=3, verbose=False, delta=0):
